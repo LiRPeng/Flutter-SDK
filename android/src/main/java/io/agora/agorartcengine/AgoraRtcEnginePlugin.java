@@ -315,6 +315,8 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 int localRenderMode = call.argument("renderMode");
                 VideoCanvas localCanvas = new VideoCanvas(localView);
                 localCanvas.renderMode = localRenderMode;
+                int mirrorMode=call.argument("mirrorMode");
+                localCanvas.mirrorMode=mirrorMode;
                 mRtcEngine.setupLocalVideo(localCanvas);
                 result.success(null);
             }
@@ -324,20 +326,23 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 SurfaceView view = getView(remoteViewId);
                 int remoteRenderMode = call.argument("renderMode");
                 int remoteUid = call.argument("uid");
-                mRtcEngine.setupRemoteVideo(new VideoCanvas(view, remoteRenderMode, remoteUid));
+                int mirrorMode=call.argument("mirrorMode");
+                mRtcEngine.setupRemoteVideo(new VideoCanvas(view, remoteRenderMode, remoteUid,mirrorMode));
                 result.success(null);
             }
             break;
             case "setLocalRenderMode": {
                 int mode = call.argument("mode");
-                mRtcEngine.setLocalRenderMode(mode);
+                int mirrorMode=call.argument("mirrorMode");
+                mRtcEngine.setLocalRenderMode(mode,mirrorMode);
                 result.success(null);
             }
             break;
             case "setRemoteRenderMode": {
                 int uid = call.argument("uid");
                 int mode = call.argument("mode");
-                mRtcEngine.setRemoteRenderMode(uid, mode);
+                int mirrorMode = call.argument("mirrorMode");
+                mRtcEngine.setRemoteRenderMode(uid, mode, mirrorMode);
                 result.success(null);
             }
             break;
@@ -1679,6 +1684,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
         int bitrate = (int) (map.get("bitrate"));
         int minBitrate = (int) (map.get("minBitrate"));
         int orientationMode = (int) (map.get("orientationMode"));
+        int mirrorMode=(int)(map.get("mirrorMode"));
 
         VideoEncoderConfiguration configuration = new VideoEncoderConfiguration();
         configuration.dimensions = new VideoEncoderConfiguration.VideoDimensions(width, height);
@@ -1686,6 +1692,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
         configuration.bitrate = bitrate;
         configuration.minBitrate = minBitrate;
         configuration.orientationMode = orientationFromValue(orientationMode);
+        configuration.mirrorMode=mirrorMode;
 
         return configuration;
     }
