@@ -15,6 +15,8 @@ class AgoraRenderWidget extends StatefulWidget {
   // local preview flag;
   final bool preview;
 
+
+
   /// render mode
   final VideoRenderMode mode;
 
@@ -72,18 +74,18 @@ class _AgoraRenderWidgetState extends State<AgoraRenderWidget> {
 
   void _bindView() {
     if (widget.local) {
-      AgoraRtcEngine.setupLocalVideo(_viewId, widget.mode);
+      AgoraRtcEngine.setupLocalVideo(_viewId, widget.mode,0);
       if (widget.preview) AgoraRtcEngine.startPreview();
     } else {
-      AgoraRtcEngine.setupRemoteVideo(_viewId, widget.mode, widget.uid);
+      AgoraRtcEngine.setupRemoteVideo(_viewId, widget.mode, widget.uid,0);
     }
   }
 
   void _changeRenderMode() {
     if (widget.local) {
-      AgoraRtcEngine.setLocalRenderMode(widget.mode);
+      AgoraRtcEngine.setLocalRenderMode(widget.mode,0);
     } else {
-      AgoraRtcEngine.setRemoteRenderMode(widget.uid, widget.mode);
+      AgoraRtcEngine.setRemoteRenderMode(widget.uid, widget.mode,0);
     }
   }
 

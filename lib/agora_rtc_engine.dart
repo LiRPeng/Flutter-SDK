@@ -708,38 +708,48 @@ class AgoraRtcEngine {
   ///
   /// You can call this method to bind local video streams to Widget created by [createNativeView] of the  and configure the video display settings.
   static Future<void> setupLocalVideo(
-      int viewId, VideoRenderMode renderMode) async {
-    await _channel.invokeMethod('setupLocalVideo',
-        {'viewId': viewId, 'renderMode': _intFromVideoRenderMode(renderMode)});
+      int viewId, VideoRenderMode renderMode, int mirrorMode) async {
+    await _channel.invokeMethod('setupLocalVideo', {
+      'viewId': viewId,
+      'renderMode': _intFromVideoRenderMode(renderMode),
+      'mirrorMode': mirrorMode
+    });
   }
 
   /// Sets the remote user's video view.
   ///
   /// This method binds the remote user to the Widget created by [createNativeView].
   static Future<void> setupRemoteVideo(
-      int viewId, VideoRenderMode renderMode, int uid) async {
+      int viewId, VideoRenderMode renderMode, int uid, int mirrorMode) async {
     await _channel.invokeMethod('setupRemoteVideo', {
       'viewId': viewId,
       'renderMode': _intFromVideoRenderMode(renderMode),
       'uid': uid,
+      'mirrorMode': mirrorMode
     });
   }
 
   /// Sets the local video display mode.
   ///
   /// This method may be invoked multiple times during a call to change the display mode.
-  static Future<void> setLocalRenderMode(VideoRenderMode renderMode) async {
-    await _channel.invokeMethod(
-        'setLocalRenderMode', {'mode': _intFromVideoRenderMode(renderMode)});
+  static Future<void> setLocalRenderMode(
+      VideoRenderMode renderMode, int mirrorMode) async {
+    await _channel.invokeMethod('setLocalRenderMode', {
+      'mode': _intFromVideoRenderMode(renderMode),
+      'mirrorMode': mirrorMode
+    });
   }
 
   /// Sets the remote video display mode.
   ///
   /// This method can be invoked multiple times during a call to change the display mode.
   static Future<void> setRemoteRenderMode(
-      int uid, VideoRenderMode renderMode) async {
-    await _channel.invokeMethod('setRemoteRenderMode',
-        {'uid': uid, 'mode': _intFromVideoRenderMode(renderMode)});
+      int uid, VideoRenderMode renderMode, int mirrorMode) async {
+    await _channel.invokeMethod('setRemoteRenderMode', {
+      'uid': uid,
+      'mode': _intFromVideoRenderMode(renderMode),
+      'mirrorMode': mirrorMode
+    });
   }
 
   /// Starts the local video preview before joining a channel.
@@ -1204,6 +1214,11 @@ class AgoraRtcEngine {
     await _channel.invokeMethod('switchCamera');
   }
 
+  static Future<int> setCameraZoomFactor(double factor) async {
+    return await _channel
+        .invokeMethod("setCameraZoomFactor", {"factor": factor});
+  }
+
   // Miscellaneous Methods
   /// Gets the SDK version.
   static Future<String> getSdkVersion() async {
@@ -1236,6 +1251,10 @@ class AgoraRtcEngine {
     final String res = await _channel
         .invokeMethod('getParameters', {"params": params, "args": args});
     return res;
+  }
+
+  static Future<void> createRtcChannel(String channelId) async {
+    await _channel.invokeMethod("createRtcChannel", {'channelId': channelId});
   }
 
   static void _addEventChannelHandler() async {

@@ -11,11 +11,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.agora.rtc.IMetadataObserver;
+import io.agora.rtc.IRtcChannelEventHandler;
 import io.agora.rtc.IRtcEngineEventHandler;
+import io.agora.rtc.RtcChannel;
 import io.agora.rtc.RtcEngine;
 import io.agora.rtc.internal.LastmileProbeConfig;
 import io.agora.rtc.live.LiveInjectStreamConfig;
 import io.agora.rtc.live.LiveTranscoding;
+import io.agora.rtc.models.ChannelMediaOptions;
 import io.agora.rtc.models.UserInfo;
 import io.agora.rtc.video.AgoraImage;
 import io.agora.rtc.video.BeautyOptions;
@@ -35,13 +39,9 @@ import io.flutter.plugin.common.StandardMessageCodec;
 /**
  * AgoraRtcEnginePlugin
  */
-public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.StreamHandler {
+public class AgoraRtcEnginePlugin extends FlutterPlugin implements MethodCallHandler, EventChannel.StreamHandler {
 
-    private final Registrar mRegistrar;
-    private static RtcEngine mRtcEngine;
     private HashMap<String, SurfaceView> mRendererViews;
-    private Handler mEventHandler = new Handler(Looper.getMainLooper());
-    private EventChannel.EventSink sink;
 
     void addView(SurfaceView view, int id) {
         mRendererViews.put("" + id, view);
@@ -55,17 +55,19 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
         return mRendererViews.get("" + id);
     }
 
-    public static RtcEngine getRtcEngine() {
-        return mRtcEngine;
-    }
-
     /**
      * Plugin registration.
      */
     public static void registerWith(Registrar registrar) {
         final MethodChannel channel = new MethodChannel(registrar.messenger(), "agora_rtc_engine");
-
         final EventChannel eventChannel = new EventChannel(registrar.messenger(), "agora_rtc_engine_event_channel");
+
+        final MethodChannel channel2 = new MethodChannel(registrar.messenger(), "agora_rtc_channel");
+        final EventChannel eventChannel2 = new EventChannel(registrar.messenger(), "agora_rtc_channel_event_channel");
+        AgoraRtcChannelPlugin plugin2 = new AgoraRtcChannelPlugin(registrar);
+        channel2.setMethodCallHandler(plugin2);
+        eventChannel2.setStreamHandler(plugin2);
+
 
         AgoraRtcEnginePlugin plugin = new AgoraRtcEnginePlugin(registrar);
         channel.setMethodCallHandler(plugin);
@@ -82,19 +84,6 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
         this.mRendererViews = new HashMap<>();
     }
 
-    private Context getActiveContext() {
-        return (mRegistrar.activity() != null) ? mRegistrar.activity() : mRegistrar.context();
-    }
-
-    private AgoraImage createAgoraImage(Map<String, Object> options) {
-        AgoraImage image = new AgoraImage();
-        image.url = (String) options.get("url");
-        image.height = (int) options.get("height");
-        image.width = (int) options.get("width");
-        image.x = (int) options.get("x");
-        image.y = (int) options.get("y");
-        return image;
-    }
 
     @Override
     public void onMethodCall(MethodCall call, Result result) {
@@ -105,7 +94,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             case "create": {
                 try {
                     String appId = call.argument("appId");
-                    mRtcEngine = RtcEngine.create(context, appId, mRtcEventHandler);
+                    AgoraRtc.newInstance().create(context, appId, mRtcEventHandler);
                     result.success(null);
                 } catch (Exception e) {
                     throw new RuntimeException("NEED TO check rtc sdk init fatal error\n");
@@ -113,19 +102,19 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             }
             break;
             case "destroy": {
-                RtcEngine.destroy();
+                AgoraRtc.newInstance().destroy();
                 result.success(null);
             }
             break;
             case "setChannelProfile": {
                 int profile = call.argument("profile");
-                mRtcEngine.setChannelProfile(profile);
+                AgoraRtc.newInstance().rtcEngine().setChannelProfile(profile);
                 result.success(null);
             }
             break;
             case "setClientRole": {
                 int role = call.argument("role");
-                mRtcEngine.setClientRole(role);
+                AgoraRtc.newInstance().rtcEngine().setClientRole(role);
                 result.success(null);
             }
             break;
@@ -134,40 +123,40 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 String channel = call.argument("channelId");
                 String info = call.argument("info");
                 int uid = call.argument("uid");
-                result.success(mRtcEngine.joinChannel(token, channel, info, uid) >= 0);
+                result.success(AgoraRtc.newInstance().rtcEngine().joinChannel(token, channel, info, uid) >= 0);
             }
             break;
             case "leaveChannel": {
-                result.success(mRtcEngine.leaveChannel() >= 0);
+                result.success(AgoraRtc.newInstance().rtcEngine().leaveChannel() >= 0);
             }
             break;
             case "switchChannel": {
                 String token = call.argument("token");
                 String channel = call.argument("channelId");
-                result.success(mRtcEngine.switchChannel(token, channel) >= 0);
+                result.success(AgoraRtc.newInstance().rtcEngine().switchChannel(token, channel) >= 0);
             }
             break;
             case "renewToken": {
                 String token = call.argument("token");
-                mRtcEngine.renewToken(token);
+                AgoraRtc.newInstance().rtcEngine().renewToken(token);
                 result.success(null);
             }
             break;
             case "enableWebSdkInteroperability": {
                 boolean enabled = call.argument("enabled");
-                mRtcEngine.enableWebSdkInteroperability(enabled);
+                AgoraRtc.newInstance().rtcEngine().enableWebSdkInteroperability(enabled);
                 result.success(null);
             }
             break;
             case "getConnectionState": {
-                int state = mRtcEngine.getConnectionState();
+                int state = AgoraRtc.newInstance().rtcEngine().getConnectionState();
                 result.success(state);
             }
             break;
             case "registerLocalUserAccount": {
                 String appId = call.argument("appId");
                 String userAccount = call.argument("userAccount");
-                int state = mRtcEngine.registerLocalUserAccount(appId, userAccount);
+                int state = AgoraRtc.newInstance().rtcEngine().registerLocalUserAccount(appId, userAccount);
                 result.success(state == 0 ? true : false);
             }
             break;
@@ -175,14 +164,14 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 String token = call.argument("token");
                 String userAccount = call.argument("userAccount");
                 String channelId = call.argument("channelId");
-                int state = mRtcEngine.joinChannelWithUserAccount(token, channelId, userAccount);
+                int state = AgoraRtc.newInstance().rtcEngine().joinChannelWithUserAccount(token, channelId, userAccount);
                 result.success(state == 0 ? true : false);
             }
             break;
             case "getUserInfoByUserAccount": {
                 String userAccount = call.argument("userAccount");
                 UserInfo info = new UserInfo();
-                int code = mRtcEngine.getUserInfoByUserAccount(userAccount, info);
+                int code = AgoraRtc.newInstance().rtcEngine().getUserInfoByUserAccount(userAccount, info);
                 if (code == 0) {
                     HashMap<String, Object> map = new HashMap<>();
                     map.put("uid", info.uid);
@@ -196,7 +185,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             case "getUserInfoByUid": {
                 int uid = call.argument("uid");
                 UserInfo info = new UserInfo();
-                int code = mRtcEngine.getUserInfoByUid(uid, info);
+                int code = AgoraRtc.newInstance().rtcEngine().getUserInfoByUid(uid, info);
                 if (code == 0) {
                     HashMap<String, Object> map = new HashMap<>();
                     map.put("uid", info.uid);
@@ -209,31 +198,31 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             break;
             // Core Audio
             case "enableAudio": {
-                mRtcEngine.enableAudio();
+                AgoraRtc.newInstance().rtcEngine().enableAudio();
                 result.success(null);
             }
             break;
             case "disableAudio": {
-                mRtcEngine.disableAudio();
+                AgoraRtc.newInstance().rtcEngine().disableAudio();
                 result.success(null);
             }
             break;
             case "setAudioProfile": {
                 int profile = call.argument("profile");
                 int scenario = call.argument("scenario");
-                mRtcEngine.setAudioProfile(profile, scenario);
+                AgoraRtc.newInstance().rtcEngine().setAudioProfile(profile, scenario);
                 result.success(null);
             }
             break;
             case "adjustRecordingSignalVolume": {
                 int volume = call.argument("volume");
-                mRtcEngine.adjustRecordingSignalVolume(volume);
+                AgoraRtc.newInstance().rtcEngine().adjustRecordingSignalVolume(volume);
                 result.success(null);
             }
             break;
             case "adjustPlaybackSignalVolume": {
                 int volume = call.argument("volume");
-                mRtcEngine.adjustPlaybackSignalVolume(volume);
+                AgoraRtc.newInstance().rtcEngine().adjustPlaybackSignalVolume(volume);
                 result.success(null);
             }
             break;
@@ -241,38 +230,38 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 int interval = call.argument("interval");
                 int smooth = call.argument("smooth");
                 boolean vad = call.argument("vad");
-                mRtcEngine.enableAudioVolumeIndication(interval, smooth, vad);
+                AgoraRtc.newInstance().rtcEngine().enableAudioVolumeIndication(interval, smooth, vad);
                 result.success(null);
             }
             break;
             case "enableLocalAudio": {
                 boolean enabled = call.argument("enabled");
-                mRtcEngine.enableLocalAudio(enabled);
+                AgoraRtc.newInstance().rtcEngine().enableLocalAudio(enabled);
                 result.success(null);
             }
             break;
             case "muteLocalAudioStream": {
                 boolean muted = call.argument("muted");
-                mRtcEngine.muteLocalAudioStream(muted);
+                AgoraRtc.newInstance().rtcEngine().muteLocalAudioStream(muted);
                 result.success(null);
             }
             break;
             case "muteRemoteAudioStream": {
                 int uid = call.argument("uid");
                 boolean muted = call.argument("muted");
-                mRtcEngine.muteRemoteAudioStream(uid, muted);
+                AgoraRtc.newInstance().rtcEngine().muteRemoteAudioStream(uid, muted);
                 result.success(null);
             }
             break;
             case "muteAllRemoteAudioStreams": {
                 boolean muted = call.argument("muted");
-                mRtcEngine.muteAllRemoteAudioStreams(muted);
+                AgoraRtc.newInstance().rtcEngine().muteAllRemoteAudioStreams(muted);
                 result.success(null);
             }
             break;
             case "setDefaultMuteAllRemoteAudioStreams": {
                 boolean muted = call.argument("muted");
-                mRtcEngine.setDefaultMuteAllRemoteAudioStreams(muted);
+                AgoraRtc.newInstance().rtcEngine().setDefaultMuteAllRemoteAudioStreams(muted);
                 result.success(null);
             }
             break;
@@ -281,25 +270,25 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 boolean enabled = call.argument("enabled");
                 HashMap<String, Object> optionsMap = call.argument("options");
                 BeautyOptions options = beautyOptionsFromMap(optionsMap);
-                mRtcEngine.setBeautyEffectOptions(enabled, options);
+                AgoraRtc.newInstance().rtcEngine().setBeautyEffectOptions(enabled, options);
                 result.success(null);
             }
             break;
             // Core Video
             case "enableVideo": {
-                mRtcEngine.enableVideo();
+                AgoraRtc.newInstance().rtcEngine().enableVideo();
                 result.success(null);
             }
             break;
             case "disableVideo": {
-                mRtcEngine.disableVideo();
+                AgoraRtc.newInstance().rtcEngine().disableVideo();
                 result.success(null);
             }
             break;
             case "setVideoEncoderConfiguration": {
                 HashMap<String, Object> configDic = call.argument("config");
                 VideoEncoderConfiguration config = videoEncoderConfigurationFromMap(configDic);
-                mRtcEngine.setVideoEncoderConfiguration(config);
+                AgoraRtc.newInstance().rtcEngine().setVideoEncoderConfiguration(config);
                 result.success(null);
             }
             break;
@@ -315,9 +304,9 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 int localRenderMode = call.argument("renderMode");
                 VideoCanvas localCanvas = new VideoCanvas(localView);
                 localCanvas.renderMode = localRenderMode;
-                int mirrorMode=call.argument("mirrorMode");
-                localCanvas.mirrorMode=mirrorMode;
-                mRtcEngine.setupLocalVideo(localCanvas);
+                int mirrorMode = call.argument("mirrorMode");
+                localCanvas.mirrorMode = mirrorMode;
+                AgoraRtc.newInstance().rtcEngine().setupLocalVideo(localCanvas);
                 result.success(null);
             }
             break;
@@ -326,15 +315,15 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 SurfaceView view = getView(remoteViewId);
                 int remoteRenderMode = call.argument("renderMode");
                 int remoteUid = call.argument("uid");
-                int mirrorMode=call.argument("mirrorMode");
-                mRtcEngine.setupRemoteVideo(new VideoCanvas(view, remoteRenderMode, remoteUid,mirrorMode));
+                int mirrorMode = call.argument("mirrorMode");
+                AgoraRtc.newInstance().rtcEngine().setupRemoteVideo(new VideoCanvas(view, remoteRenderMode, remoteUid, mirrorMode));
                 result.success(null);
             }
             break;
             case "setLocalRenderMode": {
                 int mode = call.argument("mode");
-                int mirrorMode=call.argument("mirrorMode");
-                mRtcEngine.setLocalRenderMode(mode,mirrorMode);
+                int mirrorMode = call.argument("mirrorMode");
+                AgoraRtc.newInstance().rtcEngine().setLocalRenderMode(mode, mirrorMode);
                 result.success(null);
             }
             break;
@@ -342,48 +331,48 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 int uid = call.argument("uid");
                 int mode = call.argument("mode");
                 int mirrorMode = call.argument("mirrorMode");
-                mRtcEngine.setRemoteRenderMode(uid, mode, mirrorMode);
+                AgoraRtc.newInstance().rtcEngine().setRemoteRenderMode(uid, mode, mirrorMode);
                 result.success(null);
             }
             break;
             case "startPreview": {
-                mRtcEngine.startPreview();
+                AgoraRtc.newInstance().rtcEngine().startPreview();
                 result.success(null);
             }
             break;
             case "stopPreview": {
-                mRtcEngine.stopPreview();
+                AgoraRtc.newInstance().rtcEngine().stopPreview();
                 result.success(null);
             }
             break;
             case "enableLocalVideo": {
                 boolean enabled = call.argument("enabled");
-                mRtcEngine.enableLocalVideo(enabled);
+                AgoraRtc.newInstance().rtcEngine().enableLocalVideo(enabled);
                 result.success(null);
             }
             break;
             case "muteLocalVideoStream": {
                 boolean muted = call.argument("muted");
-                mRtcEngine.muteLocalVideoStream(muted);
+                AgoraRtc.newInstance().rtcEngine().muteLocalVideoStream(muted);
                 result.success(null);
             }
             break;
             case "muteRemoteVideoStream": {
                 int uid = call.argument("uid");
                 boolean muted = call.argument("muted");
-                mRtcEngine.muteRemoteVideoStream(uid, muted);
+                AgoraRtc.newInstance().rtcEngine().muteRemoteVideoStream(uid, muted);
                 result.success(null);
             }
             break;
             case "muteAllRemoteVideoStreams": {
                 boolean muted = call.argument("muted");
-                mRtcEngine.muteAllRemoteVideoStreams(muted);
+                AgoraRtc.newInstance().rtcEngine().muteAllRemoteVideoStreams(muted);
                 result.success(null);
             }
             break;
             case "setDefaultMuteAllRemoteVideoStreams": {
                 boolean muted = call.argument("muted");
-                mRtcEngine.setDefaultMuteAllRemoteVideoStreams(muted);
+                AgoraRtc.newInstance().rtcEngine().setDefaultMuteAllRemoteVideoStreams(muted);
                 result.success(null);
             }
             break;
@@ -391,40 +380,40 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             // Voice
             case "setLocalVoiceChanger": {
                 int changer = call.argument("changer");
-                mRtcEngine.setLocalVoiceChanger(changer);
+                AgoraRtc.newInstance().rtcEngine().setLocalVoiceChanger(changer);
                 result.success(null);
             }
             break;
 
             case "setLocalVoicePitch": {
                 double pitch = call.argument("pitch");
-                mRtcEngine.setLocalVoicePitch(pitch);
+                AgoraRtc.newInstance().rtcEngine().setLocalVoicePitch(pitch);
                 result.success(null);
             }
             break;
             case "setLocalVoiceEqualizationOfBandFrequency": {
                 int bandFrequency = call.argument("bandFrequency");
                 int gain = call.argument("gain");
-                mRtcEngine.setLocalVoiceEqualization(bandFrequency, gain);
+                AgoraRtc.newInstance().rtcEngine().setLocalVoiceEqualization(bandFrequency, gain);
                 result.success(null);
             }
             break;
             case "setLocalVoiceReverbOfType": {
                 int reverbType = call.argument("reverbType");
                 int value = call.argument("value");
-                mRtcEngine.setLocalVoiceReverb(reverbType, value);
+                AgoraRtc.newInstance().rtcEngine().setLocalVoiceReverb(reverbType, value);
                 result.success(null);
             }
             break;
             case "setLocalVoiceReverbPreset": {
                 int reverbType = call.argument("reverbType");
-                mRtcEngine.setLocalVoiceReverbPreset(reverbType);
+                AgoraRtc.newInstance().rtcEngine().setLocalVoiceReverbPreset(reverbType);
                 result.success(null);
             }
             break;
             case "enableSoundPositionIndication": {
                 boolean enabled = call.argument("enabled");
-                mRtcEngine.enableSoundPositionIndication(enabled);
+                AgoraRtc.newInstance().rtcEngine().enableSoundPositionIndication(enabled);
                 result.success(null);
             }
             break;
@@ -432,7 +421,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 int uid = call.argument("uid");
                 double pan = call.argument("pan");
                 int gain = call.argument("gain");
-                mRtcEngine.setRemoteVoicePosition(uid, pan, gain);
+                AgoraRtc.newInstance().rtcEngine().setRemoteVoicePosition(uid, pan, gain);
                 result.success(null);
             }
             break;
@@ -440,18 +429,18 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             // Audio Routing Controller
             case "setDefaultAudioRouteToSpeaker": {
                 boolean defaultToSpeaker = call.argument("defaultToSpeaker");
-                mRtcEngine.setDefaultAudioRoutetoSpeakerphone(defaultToSpeaker);
+                AgoraRtc.newInstance().rtcEngine().setDefaultAudioRoutetoSpeakerphone(defaultToSpeaker);
                 result.success(null);
             }
             break;
             case "setEnableSpeakerphone": {
                 boolean enabled = call.argument("enabled");
-                mRtcEngine.setEnableSpeakerphone(enabled);
+                AgoraRtc.newInstance().rtcEngine().setEnableSpeakerphone(enabled);
                 result.success(null);
             }
             break;
             case "isSpeakerphoneEnabled": {
-                boolean enabled = mRtcEngine.isSpeakerphoneEnabled();
+                boolean enabled = AgoraRtc.newInstance().rtcEngine().isSpeakerphoneEnabled();
                 result.success(enabled);
             }
             break;
@@ -460,18 +449,18 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             case "setRemoteUserPriority": {
                 int uid = call.argument("uid");
                 int userPriority = call.argument("userPriority");
-                mRtcEngine.setRemoteUserPriority(uid, userPriority);
+                AgoraRtc.newInstance().rtcEngine().setRemoteUserPriority(uid, userPriority);
                 result.success(null);
             }
             case "setLocalPublishFallbackOption": {
                 int option = call.argument("option");
-                mRtcEngine.setLocalPublishFallbackOption(option);
+                AgoraRtc.newInstance().rtcEngine().setLocalPublishFallbackOption(option);
                 result.success(null);
             }
             break;
             case "setRemoteSubscribeFallbackOption": {
                 int option = call.argument("option");
-                mRtcEngine.setRemoteSubscribeFallbackOption(option);
+                AgoraRtc.newInstance().rtcEngine().setRemoteSubscribeFallbackOption(option);
                 result.success(null);
             }
             break;
@@ -479,24 +468,29 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             // Dual-stream Mode
             case "enableDualStreamMode": {
                 boolean enabled = call.argument("enabled");
-                mRtcEngine.enableDualStreamMode(enabled);
+                AgoraRtc.newInstance().rtcEngine().enableDualStreamMode(enabled);
                 result.success(null);
             }
             break;
             case "setRemoteVideoStreamType": {
                 int uid = call.argument("uid");
                 int streamType = call.argument("streamType");
-                mRtcEngine.setRemoteVideoStreamType(uid, streamType);
+                AgoraRtc.newInstance().rtcEngine().setRemoteVideoStreamType(uid, streamType);
                 result.success(null);
             }
             break;
             case "setRemoteDefaultVideoStreamType": {
                 int streamType = call.argument("streamType");
-                mRtcEngine.setRemoteDefaultVideoStreamType(streamType);
+                AgoraRtc.newInstance().rtcEngine().setRemoteDefaultVideoStreamType(streamType);
                 result.success(null);
             }
             break;
-
+            case "setCameraZoomFactor": {
+                float factor = call.argument("factor");
+                AgoraRtc.newInstance().rtcEngine().setCameraZoomFactor(factor);
+                result.success(null);
+            }
+            break;
             case "setLiveTranscoding": {
                 LiveTranscoding transcoding = new LiveTranscoding();
                 Map params = call.argument("transcoding");
@@ -572,18 +566,18 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 if (params.get("transcodingExtraInfo") != null) {
                     transcoding.userConfigExtraInfo = (String) params.get("transcodingExtraInfo");
                 }
-                result.success(mRtcEngine.setLiveTranscoding(transcoding));
+                result.success(AgoraRtc.newInstance().rtcEngine().setLiveTranscoding(transcoding));
             }
             break;
             case "addPublishStreamUrl": {
                 String url = call.argument("url");
                 boolean enable = call.argument("enable");
-                result.success(mRtcEngine.addPublishStreamUrl(url, enable));
+                result.success(AgoraRtc.newInstance().rtcEngine().addPublishStreamUrl(url, enable));
             }
             break;
             case "removePublishStreamUrl": {
                 String url = call.argument("url");
-                result.success(mRtcEngine.removePublishStreamUrl(url));
+                result.success(AgoraRtc.newInstance().rtcEngine().removePublishStreamUrl(url));
             }
             break;
             case "addInjectStreamUrl": {
@@ -618,50 +612,50 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 if (config.get("audioSampleRate") != null) {
                     streamConfig.audioSampleRate = LiveInjectStreamConfig.AudioSampleRateType.values()[(int) config.get("audioSampleRate")];
                 }
-                result.success(mRtcEngine.addInjectStreamUrl(url, streamConfig));
+                result.success(AgoraRtc.newInstance().rtcEngine().addInjectStreamUrl(url, streamConfig));
             }
             break;
             case "removeInjectStreamUrl": {
                 String url = call.argument("url");
-                result.success(mRtcEngine.removeInjectStreamUrl(url));
+                result.success(AgoraRtc.newInstance().rtcEngine().removeInjectStreamUrl(url));
             }
             break;
 
             // Encryption
             case "setEncryptionSecret": {
                 String secret = call.argument("secret");
-                mRtcEngine.setEncryptionSecret(secret);
+                AgoraRtc.newInstance().rtcEngine().setEncryptionSecret(secret);
                 result.success(null);
             }
             break;
             case "setEncryptionMode": {
                 String encryptionMode = call.argument("encryptionMode");
-                mRtcEngine.setEncryptionMode(encryptionMode);
+                AgoraRtc.newInstance().rtcEngine().setEncryptionMode(encryptionMode);
                 result.success(null);
             }
             break;
 
             case "startEchoTestWithInterval": {
                 int interval = call.argument("interval");
-                mRtcEngine.startEchoTest(interval);
+                AgoraRtc.newInstance().rtcEngine().startEchoTest(interval);
                 result.success(null);
             }
             break;
 
             case "stopEchoTest": {
-                mRtcEngine.stopEchoTest();
+                AgoraRtc.newInstance().rtcEngine().stopEchoTest();
                 result.success(null);
             }
             break;
 
             case "enableLastmileTest": {
-                mRtcEngine.enableLastmileTest();
+                AgoraRtc.newInstance().rtcEngine().enableLastmileTest();
                 result.success(null);
             }
             break;
 
             case "disableLastmileTest": {
-                mRtcEngine.disableLastmileTest();
+                AgoraRtc.newInstance().rtcEngine().disableLastmileTest();
                 result.success(null);
             }
             break;
@@ -674,13 +668,13 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 config.probeDownlink = (boolean) probeConfig.get("probeDownlink");
                 config.probeUplink = (boolean) probeConfig.get("probeUplink");
 
-                mRtcEngine.startLastmileProbeTest(config);
+                AgoraRtc.newInstance().rtcEngine().startLastmileProbeTest(config);
                 result.success(null);
             }
             break;
 
             case "stopLastmileProbeTest": {
-                mRtcEngine.stopLastmileProbeTest();
+                AgoraRtc.newInstance().rtcEngine().stopLastmileProbeTest();
                 result.success(null);
             }
             break;
@@ -707,13 +701,13 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 options.positionInLandscapeMode = landscapePosition;
                 options.visibleInPreview = (boolean) watermarkOptions.get("visibleInPreview");
                 options.positionInPortraitMode = portraitPosition;
-                mRtcEngine.addVideoWatermark(url, options);
+                AgoraRtc.newInstance().rtcEngine().addVideoWatermark(url, options);
                 result.success(null);
             }
             break;
 
             case "clearVideoWatermarks": {
-                mRtcEngine.clearVideoWatermarks();
+                AgoraRtc.newInstance().rtcEngine().clearVideoWatermarks();
                 result.success(null);
             }
             break;
@@ -723,90 +717,90 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 boolean loopback = call.argument("loopback");
                 boolean replace = call.argument("replace");
                 int cycle = call.argument("cycle");
-                mRtcEngine.startAudioMixing(filepath, loopback, replace, cycle);
+                AgoraRtc.newInstance().rtcEngine().startAudioMixing(filepath, loopback, replace, cycle);
                 result.success(null);
             }
             break;
 
             case "stopAudioMixing": {
-                mRtcEngine.stopAudioMixing();
+                AgoraRtc.newInstance().rtcEngine().stopAudioMixing();
                 result.success(null);
             }
             break;
 
             case "pauseAudioMixing": {
-                mRtcEngine.pauseAudioMixing();
+                AgoraRtc.newInstance().rtcEngine().pauseAudioMixing();
                 result.success(null);
             }
             break;
 
             case "resumeAudioMixing": {
-                mRtcEngine.resumeAudioMixing();
+                AgoraRtc.newInstance().rtcEngine().resumeAudioMixing();
                 result.success(null);
             }
             break;
 
             case "adjustAudioMixingVolume": {
                 int volume = call.argument("volume");
-                mRtcEngine.adjustAudioMixingVolume(volume);
+                AgoraRtc.newInstance().rtcEngine().adjustAudioMixingVolume(volume);
                 result.success(null);
             }
             break;
 
             case "adjustAudioMixingPlayoutVolume": {
                 int volume = call.argument("volume");
-                mRtcEngine.adjustAudioMixingPlayoutVolume(volume);
+                AgoraRtc.newInstance().rtcEngine().adjustAudioMixingPlayoutVolume(volume);
                 result.success(null);
             }
             break;
 
             case "adjustAudioMixingPublishVolume": {
                 int volume = call.argument("volume");
-                mRtcEngine.adjustAudioMixingPublishVolume(volume);
+                AgoraRtc.newInstance().rtcEngine().adjustAudioMixingPublishVolume(volume);
                 result.success(null);
             }
             break;
 
             case "getAudioMixingPlayoutVolume": {
-                int res = mRtcEngine.getAudioMixingPlayoutVolume();
+                int res = AgoraRtc.newInstance().rtcEngine().getAudioMixingPlayoutVolume();
                 result.success(res);
             }
             break;
 
             case "getAudioMixingPublishVolume": {
-                int res = mRtcEngine.getAudioMixingPublishVolume();
+                int res = AgoraRtc.newInstance().rtcEngine().getAudioMixingPublishVolume();
                 result.success(res);
             }
             break;
 
             case "getAudioMixingDuration": {
-                int res = mRtcEngine.getAudioMixingDuration();
+                int res = AgoraRtc.newInstance().rtcEngine().getAudioMixingDuration();
                 result.success(res);
             }
             break;
 
             case "getAudioMixingCurrentPosition": {
-                int res = mRtcEngine.getAudioMixingCurrentPosition();
+                int res = AgoraRtc.newInstance().rtcEngine().getAudioMixingCurrentPosition();
                 result.success(res);
             }
             break;
 
             case "setAudioMixingPosition": {
                 int pos = call.argument("pos");
-                mRtcEngine.setAudioMixingPosition(pos);
+                AgoraRtc.newInstance().rtcEngine().setAudioMixingPosition(pos);
                 result.success(null);
             }
             break;
 
             case "getEffectsVolume": {
-                double volume = mRtcEngine.getAudioEffectManager().getEffectsVolume();
+                double volume = AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().getEffectsVolume();
                 result.success(null);
             }
             break;
 
             case "setEffectsVolume": {
                 double volume = call.argument("volume");
-                mRtcEngine.getAudioEffectManager().setEffectsVolume(volume);
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().setEffectsVolume(volume);
                 result.success(null);
             }
             break;
@@ -814,7 +808,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             case "setVolumeOfEffect": {
                 double volume = call.argument("volume");
                 int soundId = call.argument("soundId");
-                mRtcEngine.getAudioEffectManager().setVolumeOfEffect(soundId, volume);
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().setVolumeOfEffect(soundId, volume);
                 result.success(null);
             }
             break;
@@ -827,20 +821,20 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                 double pan = call.argument("pan");
                 double gain = call.argument("gain");
                 boolean publish = call.argument("publish");
-                mRtcEngine.getAudioEffectManager().playEffect(soundId, filepath, loopback, pitch, pan, gain, publish);
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().playEffect(soundId, filepath, loopback, pitch, pan, gain, publish);
                 result.success(null);
             }
             break;
 
             case "stopEffect": {
                 int soundId = call.argument("soundId");
-                mRtcEngine.getAudioEffectManager().stopEffect(soundId);
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().stopEffect(soundId);
                 result.success(null);
             }
             break;
 
             case "stopAllEffects": {
-                mRtcEngine.getAudioEffectManager().stopAllEffects();
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().stopAllEffects();
                 result.success(null);
             }
             break;
@@ -848,40 +842,40 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             case "preloadEffect": {
                 int soundId = call.argument("soundId");
                 String filepath = call.argument("filepath");
-                mRtcEngine.getAudioEffectManager().preloadEffect(soundId, filepath);
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().preloadEffect(soundId, filepath);
                 result.success(null);
             }
             break;
 
             case "unloadEffect": {
                 int soundId = call.argument("soundId");
-                mRtcEngine.getAudioEffectManager().unloadEffect(soundId);
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().unloadEffect(soundId);
                 result.success(null);
             }
             break;
 
             case "pauseEffect": {
                 int soundId = call.argument("soundId");
-                mRtcEngine.getAudioEffectManager().pauseEffect(soundId);
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().pauseEffect(soundId);
                 result.success(null);
             }
             break;
 
             case "pauseAllEffects": {
-                mRtcEngine.getAudioEffectManager().pauseAllEffects();
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().pauseAllEffects();
                 result.success(null);
             }
             break;
 
             case "resumeEffect": {
                 int soundId = call.argument("soundId");
-                mRtcEngine.getAudioEffectManager().resumeEffect(soundId);
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().resumeEffect(soundId);
                 result.success(null);
             }
             break;
 
             case "resumeAllEffects": {
-                mRtcEngine.getAudioEffectManager().resumeAllEffects();
+                AgoraRtc.newInstance().rtcEngine().getAudioEffectManager().resumeAllEffects();
                 result.success(null);
             }
             break;
@@ -916,7 +910,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                     }
                     config.setDestChannelInfo(channelName, new ChannelMediaInfo(channelName, token, uid));
                 }
-                mRtcEngine.startChannelMediaRelay(config);
+                AgoraRtc.newInstance().rtcEngine().startChannelMediaRelay(config);
                 result.success(null);
             }
             break;
@@ -943,7 +937,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                     }
                     config.removeDestChannelInfo(channelName);
                 }
-                mRtcEngine.updateChannelMediaRelay(config);
+                AgoraRtc.newInstance().rtcEngine().updateChannelMediaRelay(config);
                 result.success(null);
             }
             break;
@@ -978,34 +972,34 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
                     }
                     config.setDestChannelInfo(channelName, new ChannelMediaInfo(channelName, token, uid));
                 }
-                mRtcEngine.updateChannelMediaRelay(config);
+                AgoraRtc.newInstance().rtcEngine().updateChannelMediaRelay(config);
                 result.success(null);
             }
             break;
 
             case "stopChannelMediaRelay": {
-                mRtcEngine.stopChannelMediaRelay();
+                AgoraRtc.newInstance().rtcEngine().stopChannelMediaRelay();
                 result.success(null);
             }
             break;
 
             case "enableInEarMonitoring": {
                 boolean enabled = call.argument("enabled");
-                mRtcEngine.enableInEarMonitoring(enabled);
+                AgoraRtc.newInstance().rtcEngine().enableInEarMonitoring(enabled);
                 result.success(null);
             }
             break;
 
             case "setInEarMonitoringVolume": {
                 int volume = call.argument("volume");
-                mRtcEngine.setInEarMonitoringVolume(volume);
+                AgoraRtc.newInstance().rtcEngine().setInEarMonitoringVolume(volume);
                 result.success(null);
             }
             break;
 
             // Camera Control
             case "switchCamera": {
-                mRtcEngine.switchCamera();
+                AgoraRtc.newInstance().rtcEngine().switchCamera();
                 result.success(null);
             }
             break;
@@ -1019,28 +1013,28 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
 
             case "setLogFile": {
                 String filePath = call.argument("filePath");
-                mRtcEngine.setLogFile(filePath);
+                AgoraRtc.newInstance().rtcEngine().setLogFile(filePath);
                 result.success(null);
             }
             break;
 
             case "setLogFilter": {
                 int filter = call.argument("filter");
-                mRtcEngine.setLogFilter(filter);
+                AgoraRtc.newInstance().rtcEngine().setLogFilter(filter);
                 result.success(null);
             }
             break;
 
             case "setLogFileSize": {
                 int fileSizeInKBytes = call.argument("fileSizeInKBytes");
-                mRtcEngine.setLogFileSize(fileSizeInKBytes);
+                AgoraRtc.newInstance().rtcEngine().setLogFileSize(fileSizeInKBytes);
                 result.success(null);
             }
             break;
 
             case "setParameters": {
                 String params = call.argument("params");
-                int res = mRtcEngine.setParameters(params);
+                int res = AgoraRtc.newInstance().rtcEngine().setParameters(params);
                 result.success(res);
             }
             break;
@@ -1048,28 +1042,22 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
             case "getParameters": {
                 String params = call.argument("params");
                 String args = call.argument("args");
-                String res = mRtcEngine.getParameter(params, args);
+                String res = AgoraRtc.newInstance().rtcEngine().getParameter(params, args);
                 result.success(res);
             }
             break;
-
+            case "createRtcChannel": {
+                String channelId = call.argument("channelId");
+                RtcChannel rtcChannel = AgoraRtc.newInstance().rtcEngine().createRtcChannel(channelId);
+                AgoraRtc.newInstance().addRtcChannel(channelId, rtcChannel);
+                result.success(null);
+            }
+            break;
             default:
                 result.notImplemented();
         }
     }
 
-    private VideoEncoderConfiguration.ORIENTATION_MODE orientationFromValue(int value) {
-        switch (value) {
-            case 0:
-                return VideoEncoderConfiguration.ORIENTATION_MODE.ORIENTATION_MODE_ADAPTIVE;
-            case 1:
-                return VideoEncoderConfiguration.ORIENTATION_MODE.ORIENTATION_MODE_FIXED_LANDSCAPE;
-            case 2:
-                return VideoEncoderConfiguration.ORIENTATION_MODE.ORIENTATION_MODE_FIXED_PORTRAIT;
-            default:
-                return VideoEncoderConfiguration.ORIENTATION_MODE.ORIENTATION_MODE_ADAPTIVE;
-        }
-    }
 
     private final IRtcEngineEventHandler mRtcEventHandler = new IRtcEngineEventHandler() {
         @Override
@@ -1562,152 +1550,7 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
 //            super.onAudioMixingFinished();
 //            sendEvent("onAudioMixingFinished", null);
 //        }
-
-        private HashMap<String, Object> mapFromStats(RtcStats stats) {
-            HashMap<String, Object> map = new HashMap<>();
-            map.put("totalDuration", stats.totalDuration);
-            map.put("txBytes", stats.txBytes);
-            map.put("rxBytes", stats.rxBytes);
-            map.put("txAudioBytes", stats.txAudioBytes);
-            map.put("txVideoBytes", stats.txVideoBytes);
-            map.put("rxAudioBytes", stats.rxAudioBytes);
-            map.put("rxVideoBytes", stats.rxVideoBytes);
-            map.put("txKBitrate", stats.txKBitRate);
-            map.put("rxKBitrate", stats.rxKBitRate);
-            map.put("txAudioKBitrate", stats.txAudioKBitRate);
-            map.put("rxAudioKBitrate", stats.rxAudioKBitRate);
-            map.put("txVideoKBitrate", stats.txVideoKBitRate);
-            map.put("rxVideoKBitrate", stats.rxVideoKBitRate);
-            map.put("lastmileDelay", stats.lastmileDelay);
-            map.put("txPacketLossRate", stats.txPacketLossRate);
-            map.put("rxPacketLossRate", stats.rxPacketLossRate);
-            map.put("users", stats.users);
-            map.put("cpuAppUsage", stats.cpuAppUsage);
-            map.put("cpuTotalUsage", stats.cpuTotalUsage);
-            return map;
-        }
-
-        private HashMap<String, Object> mapFromRect(Rect rect) {
-            HashMap<String, Object> map = new HashMap<>();
-
-            map.put("x", rect.left);
-            map.put("y", rect.top);
-            map.put("width", rect.width());
-            map.put("height", rect.height());
-            return map;
-        }
-
-        private HashMap<String, Object> mapFromLocalVideoStats(LocalVideoStats stats) {
-            HashMap<String, Object> map = new HashMap<>();
-            map.put("sentBitrate", stats.sentBitrate);
-            map.put("sentFrameRate", stats.sentFrameRate);
-            map.put("encoderOutputFrameRate", stats.encoderOutputFrameRate);
-            map.put("rendererOutputFrameRate", stats.rendererOutputFrameRate);
-            map.put("sentTargetBitrate", stats.targetBitrate);
-            map.put("sentTargetFrameRate", stats.targetFrameRate);
-            map.put("qualityAdaptIndication", stats.targetBitrate);
-            map.put("encodedBitrate", stats.targetBitrate);
-            map.put("encodedFrameWidth", stats.targetBitrate);
-            map.put("encodedFrameHeight", stats.encodedFrameHeight);
-            map.put("encodedFrameCount", stats.encodedFrameCount);
-            map.put("codecType", stats.codecType);
-            return map;
-        }
-
-        private HashMap<String, Object> mapFromLocalAudioStats(LocalAudioStats stats) {
-            HashMap<String, Object> map = new HashMap<>();
-            map.put("numChannels", stats.numChannels);
-            map.put("sentSampleRate", stats.sentSampleRate);
-            map.put("sentBitrate", stats.sentBitrate);
-            return map;
-        }
-
-        private HashMap<String, Object> mapFromRemoteVideoStats(RemoteVideoStats stats) {
-            HashMap<String, Object> map = new HashMap<>();
-            map.put("uid", stats.uid);
-            map.put("width", stats.width);
-            map.put("height", stats.height);
-            map.put("receivedBitrate", stats.receivedBitrate);
-            map.put("decoderOutputFrameRate", stats.decoderOutputFrameRate);
-            map.put("rendererOutputFrameRate", stats.rendererOutputFrameRate);
-            map.put("packetLossRate", stats.packetLossRate);
-            map.put("rxStreamType", stats.rxStreamType);
-            map.put("totalFrozenTime", stats.totalFrozenTime);
-            map.put("frozenRate", stats.frozenRate);
-            return map;
-        }
-
-        private HashMap<String, Object> mapFromRemoteAudioStats(RemoteAudioStats stats) {
-            HashMap<String, Object> map = new HashMap<>();
-            map.put("uid", stats.uid);
-            map.put("quality", stats.quality);
-            map.put("networkTransportDelay", stats.networkTransportDelay);
-            map.put("jitterBufferDelay", stats.jitterBufferDelay);
-            map.put("audioLossRate", stats.audioLossRate);
-            map.put("numChannels", stats.numChannels);
-            map.put("receivedSampleRate", stats.receivedSampleRate);
-            map.put("receivedBitrate", stats.receivedBitrate);
-            map.put("totalFrozenTime", stats.totalFrozenTime);
-            map.put("frozenRate", stats.frozenRate);
-            return map;
-        }
-
-        private ArrayList<HashMap<String, Object>> arrayFromSpeakers(AudioVolumeInfo[] speakers) {
-            ArrayList<HashMap<String, Object>> list = new ArrayList<>();
-
-            for (AudioVolumeInfo info : speakers) {
-                HashMap<String, Object> map = new HashMap<>();
-                map.put("uid", info.uid);
-                map.put("volume", info.volume);
-
-                list.add(map);
-            }
-
-            return list;
-        }
     };
-
-    private BeautyOptions beautyOptionsFromMap(HashMap<String, Object> map) {
-        BeautyOptions options = new BeautyOptions();
-        options.lighteningContrastLevel =
-                ((Double) (map.get("lighteningContrastLevel"))).intValue();
-        options.lighteningLevel = ((Double) (map.get("lighteningLevel"))).floatValue();
-        options.smoothnessLevel = ((Double) (map.get("smoothnessLevel"))).floatValue();
-        options.rednessLevel = ((Double) (map.get("rednessLevel"))).floatValue();
-        return options;
-    }
-
-    private VideoEncoderConfiguration videoEncoderConfigurationFromMap(HashMap<String, Object> map) {
-        int width = (int) (map.get("width"));
-        int height = (int) (map.get("height"));
-        int frameRate = (int) (map.get("frameRate"));
-        int bitrate = (int) (map.get("bitrate"));
-        int minBitrate = (int) (map.get("minBitrate"));
-        int orientationMode = (int) (map.get("orientationMode"));
-        int mirrorMode=(int)(map.get("mirrorMode"));
-
-        VideoEncoderConfiguration configuration = new VideoEncoderConfiguration();
-        configuration.dimensions = new VideoEncoderConfiguration.VideoDimensions(width, height);
-        configuration.frameRate = frameRate;
-        configuration.bitrate = bitrate;
-        configuration.minBitrate = minBitrate;
-        configuration.orientationMode = orientationFromValue(orientationMode);
-        configuration.mirrorMode=mirrorMode;
-
-        return configuration;
-    }
-
-    private void sendEvent(final String eventName, final HashMap map) {
-        map.put("event", eventName);
-        mEventHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                if (sink != null) {
-                    sink.success(map);
-                }
-            }
-        });
-    }
 
     @Override
     public void onListen(Object o, EventChannel.EventSink eventSink) {
@@ -1719,44 +1562,4 @@ public class AgoraRtcEnginePlugin implements MethodCallHandler, EventChannel.Str
         this.sink = null;
     }
 
-    private static class MethodResultWrapper implements MethodChannel.Result {
-        private MethodChannel.Result mResult;
-        private Handler mHandler;
-
-        MethodResultWrapper(MethodChannel.Result result, Handler handler) {
-            this.mResult = result;
-            this.mHandler = handler;
-        }
-
-        @Override
-        public void success(final Object result) {
-            mHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    mResult.success(result);
-                }
-            });
-        }
-
-        @Override
-        public void error(final String errorCode, final String errorMessage,
-                          final Object errorDetails) {
-            mHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    mResult.error(errorCode, errorMessage, errorDetails);
-                }
-            });
-        }
-
-        @Override
-        public void notImplemented() {
-            mHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    mResult.notImplemented();
-                }
-            });
-        }
-    }
 }

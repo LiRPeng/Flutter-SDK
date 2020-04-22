@@ -513,6 +513,8 @@ class VideoEncoderConfiguration {
   /// Unless you have special requirements for image quality, Agora does not recommend changing this value.
   int minBitrate = -1;
 
+  int mirrorMode = 0;
+
   /// The video orientation mode of the video.
   VideoOutputOrientationMode orientationMode =
       VideoOutputOrientationMode.Adaptative;
@@ -529,6 +531,7 @@ class VideoEncoderConfiguration {
       'minFrameRate': minFrameRate,
       'bitrate': bitrate,
       'minBitrate': minBitrate,
+      'mirrorMode': mirrorMode,
       'orientationMode': orientationMode.index,
       'degradationPreference': degradationPreference.index,
     };

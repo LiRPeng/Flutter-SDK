@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:agora_rtc_engine/agora_rtc_channel.dart';
 import 'package:flutter/material.dart';
 
 void main() => runApp(MyApp());
@@ -36,6 +37,7 @@ class _MyAppState extends State<MyApp> {
 
     _initAgoraRtcEngine();
     _addAgoraEventHandlers();
+    RtcChannel.addEventChannelHandler();
   }
 
   @override
@@ -88,20 +90,25 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _initAgoraRtcEngine() async {
-    AgoraRtcEngine.create('YOUR APP ID');
+    AgoraRtcEngine.create('8fd886c7c58d4ab696dee31f0f806a53');
 
     AgoraRtcEngine.enableVideo();
     AgoraRtcEngine.enableAudio();
+
+    AgoraRtcEngine.createRtcChannel("flutter");
+    RtcChannel.setRtcChannelEventHandler("flutter");
     // AgoraRtcEngine.setParameters('{\"che.video.lowBitRateStreamParameter\":{\"width\":320,\"height\":180,\"frameRate\":15,\"bitRate\":140}}');
     AgoraRtcEngine.setChannelProfile(ChannelProfile.Communication);
-
     VideoEncoderConfiguration config = VideoEncoderConfiguration();
     config.orientationMode = VideoOutputOrientationMode.FixedPortrait;
     AgoraRtcEngine.setVideoEncoderConfiguration(config);
+
+
   }
 
   void _addAgoraEventHandlers() {
-    AgoraRtcEngine.onJoinChannelSuccess =
+
+    RtcChannel.onJoinChannelSuccess =
         (String channel, int uid, int elapsed) {
       setState(() {
         String info = 'onJoinChannel: ' + channel + ', uid: ' + uid.toString();
@@ -109,14 +116,14 @@ class _MyAppState extends State<MyApp> {
       });
     };
 
-    AgoraRtcEngine.onLeaveChannel = () {
+    RtcChannel.onLeaveChannel = (String channelId,RtcStats stats) {
       setState(() {
         _infoStrings.add('onLeaveChannel');
         _remoteUsers.clear();
       });
     };
 
-    AgoraRtcEngine.onUserJoined = (int uid, int elapsed) {
+    RtcChannel.onUserJoined = (String channelId,int uid, int elapsed) {
       setState(() {
         String info = 'userJoined: ' + uid.toString();
         _infoStrings.add(info);
@@ -124,7 +131,7 @@ class _MyAppState extends State<MyApp> {
       });
     };
 
-    AgoraRtcEngine.onUserOffline = (int uid, int reason) {
+    RtcChannel.onUserOffline = (String channelId,int uid, int reason) {
       setState(() {
         String info = 'userOffline: ' + uid.toString();
         _infoStrings.add(info);
@@ -150,12 +157,12 @@ class _MyAppState extends State<MyApp> {
     setState(() async {
       if (_isInChannel) {
         _isInChannel = false;
-        await AgoraRtcEngine.leaveChannel();
+        await RtcChannel.leaveChannel("flutter");
         await AgoraRtcEngine.stopPreview();
       } else {
         _isInChannel = true;
         await AgoraRtcEngine.startPreview();
-        await AgoraRtcEngine.joinChannel(null, 'flutter', null, 0);
+        await RtcChannel.joinChannel("flutter","0068fd886c7c58d4ab696dee31f0f806a53IABVRUb3W1kvR2ZL0RKjsJLJvTHHqMWq3YSPF4QZcfXsI4p+KioAAAAAEACVhpaLNP2gXgEAAQA0/aBe","",0 , true,true);
       }
     });
   }
